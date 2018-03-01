@@ -57,4 +57,8 @@ contract COSSToken is ERC223Token, Ownable, Distributable {
         _destination.transfer(_amount);
     }
 
+    function setTransfersEnabled() public onlyOwner {
+        transfersEnabled = true;
+    }
+
 }

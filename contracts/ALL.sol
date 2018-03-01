@@ -1,5 +1,55 @@
 pragma solidity ^0.4.18;
 
+
+contract Ownable {
+  address public owner;
+
+
+  event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
+
+
+  /**
+   * @dev The Ownable constructor sets the original `owner` of the contract to the sender
+   * account.
+   */
+  function Ownable() public {
+    owner = msg.sender;
+  }
+
+  /**
+   * @dev Throws if called by any account other than the owner.
+   */
+  modifier onlyOwner() {
+    require(msg.sender == owner);
+    _;
+  }
+
+  /**
+   * @dev Allows the current owner to transfer control of the contract to a newOwner.
+   * @param newOwner The address to transfer ownership to.
+   */
+  function transferOwnership(address newOwner) public onlyOwner {
+    require(newOwner != address(0));
+    OwnershipTransferred(owner, newOwner);
+    owner = newOwner;
+  }
+
+}
+
+contract Distributable is Ownable {
+
+    address public distributor;
+
+    function setDistributor(address _distributor) public onlyOwner {
+        distributor = _distributor;
+    }
+
+    modifier onlyOwnerOrDistributor(){
+        require(msg.sender == owner || msg.sender == distributor);
+        _;
+    }
+}
+
 library SafeMath {
 
   /**
@@ -41,62 +91,32 @@ library SafeMath {
     return c;
   }
 }
-
-contract Ownable {
-  address public owner;
-
-
-  event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
-
-
-  /**
-   * @dev The Ownable constructor sets the original `owner` of the contract to the sender
-   * account.
-   */
-  function Ownable() public {
-    owner = msg.sender;
-  }
-
-  /**
-   * @dev Throws if called by any account other than the owner.
-   */
-  modifier onlyOwner() {
-    require(msg.sender == owner);
-    _;
-  }
-
-  /**
-   * @dev Allows the current owner to transfer control of the contract to a newOwner.
-   * @param newOwner The address to transfer ownership to.
-   */
-  function transferOwnership(address newOwner) public onlyOwner {
-    require(newOwner != address(0));
-    OwnershipTransferred(owner, newOwner);
-    owner = newOwner;
-  }
-
+contract ERC20Basic {
+  function totalSupply() public view returns (uint256);
+  function balanceOf(address who) public view returns (uint256);
+  function transfer(address to, uint256 value) public returns (bool);
+  event Transfer(address indexed from, address indexed to, uint256 value);
 }
 
 
-contract Distributable is Ownable {
-    
-    address public distributor;
-
-    function setDistributor(address _distributor) public onlyOwner {
-        distributor = _distributor;
-    }
-
-    modifier onlyOwnerOrDistributor(){
-        require(msg.sender == owner || msg.sender == distributor);
-        _;
-    }
+/**
+ * @title ERC20 interface
+ * @dev see https://github.com/ethereum/EIPs/issues/20
+ */
+contract ERC20 is ERC20Basic {
+  function allowance(address owner, address spender) public view returns (uint256);
+  function transferFrom(address from, address to, uint256 value) public returns (bool);
+  function approve(address spender, uint256 value) public returns (bool);
+  event Approval(address indexed owner, address indexed spender, uint256 value);
 }
 
 contract ERC223Interface {
     function transfer(address to, uint value, bytes data) returns (bool);
-    event Transfer(address indexed from, address indexed to, uint value);
+    // event Transfer(address indexed from, address indexed to, uint value, bytes data);
 }
-contract ERC223ReceivingContract { 
+
+
+contract ERC223ReceivingContract {
 /**
  * @dev Standard ERC223 function that will handle incoming token transfers.
  *
@@ -107,20 +127,6 @@ contract ERC223ReceivingContract {
     function tokenFallback(address _from, uint _value, bytes _data);
 }
 
-
-contract ERC20Basic {
-  function totalSupply() public view returns (uint256);
-  function balanceOf(address who) public view returns (uint256);
-  function transfer(address to, uint256 value) public returns (bool);
-  event Transfer(address indexed from, address indexed to, uint256 value);
-}
-
-contract ERC20 is ERC20Basic {
-  function allowance(address owner, address spender) public view returns (uint256);
-  function transferFrom(address from, address to, uint256 value) public returns (bool);
-  function approve(address spender, uint256 value) public returns (bool);
-  event Approval(address indexed owner, address indexed spender, uint256 value);
-}
 
 
 /**
@@ -167,6 +173,7 @@ contract BasicToken is ERC20Basic {
   }
 
 }
+
 
 
 /**
@@ -264,12 +271,15 @@ contract StandardToken is ERC20, BasicToken {
 
 }
 
+
+
 /**
  * @title Reference implementation of the ERC223 standard token.
  */
 contract ERC223Token is ERC223Interface, StandardToken {
     using SafeMath for uint;
-    
+    bool public transfersEnabled = false;
+
     /**
      * @dev Transfer the specified amount of tokens to the specified address.
      *      Invokes the `tokenFallback` function if the recipient is a contract.
@@ -282,6 +292,7 @@ contract ERC223Token is ERC223Interface, StandardToken {
      * @param _data  Transaction metadata.
      */
     function transfer(address _to, uint _value, bytes _data) returns (bool) {
+        require(transfersEnabled);
         // Standard function transfer similar to ERC20 transfer with no _data .
         // Added due to backwards compatibility reasons .
         uint codeLength;
@@ -300,7 +311,7 @@ contract ERC223Token is ERC223Interface, StandardToken {
         Transfer(msg.sender, _to, _value);
         return true;
     }
-    
+
     /**
      * @dev Transfer the specified amount of tokens to the specified address.
      *      This function works the same with the previous one
@@ -311,20 +322,40 @@ contract ERC223Token is ERC223Interface, StandardToken {
      * @param _value Amount of tokens that will be transferred.
      */
     function transfer(address _to, uint _value) returns (bool) {
+        require(transfersEnabled);
         // Standard function transfer similar to ERC20 transfer with no _data .
         // Added due to backwards compatibility reasons .
         bytes memory empty;
-        return transfer(_to, _value);
+        return transfer(_to, _value, empty);
     }
 
-    
+
+    function transferFrom(address _from, address _to, uint256 _value) public returns (bool) {
+        require(transfersEnabled);
+        return super.transferFrom(_from, _to, _value);
+    }
+
+    function approve(address _spender, uint256 _value) public returns (bool) {
+        require(transfersEnabled);
+        return super.approve(_spender, _value);
+    }
+
+    function increaseApproval(address _spender, uint _addedValue) public returns (bool success) {
+        require(transfersEnabled);
+        return super.increaseApproval(_spender, _addedValue);
+    }
+
+    function decreaseApproval(address _spender, uint _subtractedValue) public returns (bool success) {
+        require(transfersEnabled);
+        return super.decreaseApproval(_spender, _subtractedValue);
+    }
 
 }
 
 contract COSSToken is ERC223Token, Ownable, Distributable {
 
     event RevenueShareIdentifierCreated (
-        address indexed _address, 
+        address indexed _address,
         string _identifier);
 
     string public name    = "COSS";
@@ -355,8 +386,8 @@ contract COSSToken is ERC223Token, Ownable, Distributable {
         }
     }
 
-    function() payable { 
-    
+    function() payable {
+
     }
 
     function activateRevenueShareIdentifier(string _revenueShareIdentifier) {
@@ -370,6 +401,10 @@ contract COSSToken is ERC223Token, Ownable, Distributable {
 
     function sendEther(address _destination, uint256 _amount) payable public onlyOwnerOrDistributor {
         _destination.transfer(_amount);
+    }
+
+    function setTransfersEnabled() public onlyOwner {
+        transfersEnabled = true;
     }
 
 }
